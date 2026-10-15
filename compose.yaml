@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: products
+      POSTGRES_USER: products
+      POSTGRES_PASSWORD: local-development-only
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U products -d products"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.5
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:18888:18888"
+      - "127.0.0.1:4317:18889"
+  migrate:
+    build: .
+    command: ["--migrate"]
+    environment: &api-env
+      ConnectionStrings__Products: Host=postgres;Database=products;Username=products;Password=local-development-only
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire:18889
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build: .
+    ports: ["127.0.0.1:8080:8080"]
+    environment: *api-env
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      aspire: {condition: service_started}
+volumes:
+  postgres-data:
